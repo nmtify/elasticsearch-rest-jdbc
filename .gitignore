@@ -1,0 +1,23 @@
+# Build output (the jar is built and published by GitHub Actions)
+build/
+dist/
+out/
+*.class
+*.jar
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and local secrets
+*.log
+.env

@@ -1,0 +1,70 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']          # pushing a tag such as v1.0.0 publishes a GitHub Release
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 1.0.1). Creates tag v<version>.'
+        required: true
+
+permissions:
+  contents: write         # needed to create releases and tags
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            VERSION="0.0.0-dev"
+          fi
+          VERSION="${VERSION#v}"
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          mkdir -p build/classes dist
+          javac --release 11 -encoding UTF-8 -Xlint:-options -d build/classes $(find src -name '*.java')
+          cp -r src/META-INF build/classes/
+          cp LICENSE build/classes/META-INF/LICENSE
+          printf 'Manifest-Version: 1.0\nImplementation-Title: Elasticsearch REST JDBC\nImplementation-Version: %s\n' "$VERSION" > build/MANIFEST.MF
+          jar --create --file "dist/esrest-$VERSION.jar" --manifest build/MANIFEST.MF -C build/classes .
+
+      - name: Test
+        run: java -cp "dist/esrest-${{ steps.version.outputs.value }}.jar" test/MockEsTest.java
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: esrest-${{ steps.version.outputs.value }}
+          path: dist/esrest-${{ steps.version.outputs.value }}.jar
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.value }}
+          name: esrest ${{ steps.version.outputs.value }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: dist/esrest-${{ steps.version.outputs.value }}.jar
